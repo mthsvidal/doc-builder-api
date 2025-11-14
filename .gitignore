@@ -482,3 +482,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Ignore everything in /infra except .yml files
+/infra/**
+!/infra/**/*.yml
+!/infra/*.yml
