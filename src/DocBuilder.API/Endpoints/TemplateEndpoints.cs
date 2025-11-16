@@ -18,7 +18,8 @@ public static class TemplateEndpoints
             return Results.Ok(response);
         })
         .WithName("RequestUploadUrl")
-        .WithSummary("Request upload URL for template submission")
+        .WithSummary("Request presigned upload URL for template file")
+        .WithDescription("Creates a bucket (directory) with the template name if it doesn't exist and generates a presigned URL for file upload")
         .Produces<UploadUrlResponseDto>(StatusCodes.Status200OK);
 
         // GET: Get templates by ID
