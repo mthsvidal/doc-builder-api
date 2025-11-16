@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\DocBuilder.Domain\DocBuilder.Domain.csproj" />
+    <ProjectReference Include="..\DocBuilder.Infra.Integration\DocBuilder.Infra.Integration.csproj" />
   </ItemGroup>
 
 </Project>
