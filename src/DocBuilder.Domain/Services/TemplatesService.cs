@@ -1,15 +1,94 @@
 using DocBuilder.Domain.DTOs;
 using DocBuilder.Domain.Models;
+using DocBuilder.Domain.Interfaces.Integrations;
+using DocBuilder.Domain.Constants;
+using DocBuilder.Domain.Context;
 
 namespace DocBuilder.Domain.Services;
 
 public class TemplatesService : ITemplateService
 {
     private readonly List<Template> _templates = new();
-    
-    public Task<UploadUrlResponseDto> RequestUploadUrlAsync(CreateTemplateDto dto)
+    private readonly IMinioIntegration _minioIntegration;
+
+    public TemplatesService(IMinioIntegration minioIntegration)
     {
-        throw new NotImplementedException("RequestUploadUrlAsync not implemented");
+        _minioIntegration = minioIntegration;
+    }
+    
+    public async Task<UploadUrlResponseDto> RequestUploadUrlAsync(CreateTemplateDto dto)
+    {
+        var trackId = RequestContext.TrackId;
+        Console.WriteLine($"[TrackId: {trackId}] Starting RequestUploadUrlAsync for template: {dto.TemplateName}");
+        
+        // Validate file extension
+        var fileExtension = Path.GetExtension(dto.FileNameWithExtension);
+        if (string.IsNullOrWhiteSpace(fileExtension))
+            throw new ArgumentException("FileNameWithExtension must include a file extension", nameof(dto.FileNameWithExtension));
+        
+        if (!fileExtension.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            throw new ArgumentException("Only ZIP files are allowed", nameof(dto.FileNameWithExtension));
+        
+        // Ensure bucket exists
+        await _minioIntegration.EnsureBucketExistsAsync(StorageConstants.TemplatesBucketName);
+
+        // Determine version number
+        var version = await DetermineNextVersionAsync(dto.TemplateName);
+        Console.WriteLine($"[TrackId: {trackId}] Using version {version} for template: {dto.TemplateName}");
+
+        // Create object path: bkt-templates/template-name/V1/file-name or V2, V3, etc.
+        var objectPath = $"{dto.TemplateName}/V{version}/{dto.FileNameWithExtension}";
+
+        // Generate presigned upload URL
+        var presignedUrl = await _minioIntegration.GeneratePresignedUploadUrlAsync(
+            StorageConstants.TemplatesBucketName, 
+            objectPath, 
+            900 // 15 minutes expiry
+        );
+
+        if (string.IsNullOrEmpty(presignedUrl))
+            throw new InvalidOperationException("Failed to generate presigned upload URL");
+
+        Console.WriteLine($"[TrackId: {trackId}] Successfully generated presigned URL for path: {objectPath}");
+        
+        return new UploadUrlResponseDto(
+            Guid.NewGuid(),
+            presignedUrl,
+            DateTime.UtcNow.AddSeconds(900)
+        );
+    }
+
+    private async Task<int> DetermineNextVersionAsync(string templateName)
+    {
+        var trackId = RequestContext.TrackId;
+        Console.WriteLine($"[TrackId: {trackId}] Determining next version for template: {templateName}");
+        
+        // Check if template folder exists and has content
+        var existingVersions = await _minioIntegration.ListObjectVersionsAsync(StorageConstants.TemplatesBucketName, templateName);
+        
+        if (existingVersions == null || !existingVersions.Any())
+        {
+            Console.WriteLine($"[TrackId: {trackId}] No existing versions found, starting with V1");
+            return 1;
+        }
+        
+        // Find the highest version number
+        var maxVersion = existingVersions
+            .Select(v => {
+                var parts = v.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length >= 2 && parts[1].StartsWith("V") && int.TryParse(parts[1].Substring(1), out var versionNum))
+                    return (int?)versionNum;
+                return (int?)null;
+            })
+            .Where(v => v.HasValue)
+            .Select(v => v!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+        
+        var nextVersion = maxVersion + 1;
+        Console.WriteLine($"[TrackId: {trackId}] Found existing version V{maxVersion}, creating V{nextVersion}");
+        
+        return nextVersion;
     }
 
     public Task<TemplateDto?> GetTemplateByIdAsync(Guid id)

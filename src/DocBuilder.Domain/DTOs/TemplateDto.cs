@@ -12,8 +12,8 @@ public record TemplateDto(
 );
 
 public record CreateTemplateDto(
-    string Name,
-    string Description
+    string TemplateName,
+    string FileNameWithExtension
 );
 
 public record UploadUrlResponseDto(
