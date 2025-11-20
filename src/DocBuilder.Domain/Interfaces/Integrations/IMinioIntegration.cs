@@ -15,7 +15,7 @@ namespace DocBuilder.Domain.Interfaces.Integrations
         /// Generates a presigned URL for uploading an object to Minio.
         /// Returns the URL or null in case of an error.
         /// </summary>
-        Task<string?> GeneratePresignedUploadUrlAsync(string bucketName, string objectName, int expiryInSeconds = 900);
+        Task<string?> GeneratePresignedUploadUrlAsync(string bucketName, string objectName, int expiryInSeconds = 900, string? contentType = null);
 
         /// <summary>
         /// Uploads JSON content to MinIO.

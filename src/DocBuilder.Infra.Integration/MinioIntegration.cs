@@ -64,7 +64,7 @@ namespace DocBuilder.Infra.Integration
             }
         }
 
-        public async Task<string?> GeneratePresignedUploadUrlAsync(string bucketName, string objectName, int expiryInSeconds = 900)
+        public async Task<string?> GeneratePresignedUploadUrlAsync(string bucketName, string objectName, int expiryInSeconds = 900, string? contentType = null)
         {
             var trackId = RequestContext.TrackId;
             Console.WriteLine($"[TrackId: {trackId}] Generating presigned URL for '{bucketName}/{objectName}'");
@@ -75,6 +75,17 @@ namespace DocBuilder.Infra.Integration
                     .WithBucket(bucketName)
                     .WithObject(objectName)
                     .WithExpiry(expiryInSeconds);
+
+                // Add content-type restriction if specified
+                if (!string.IsNullOrEmpty(contentType))
+                {
+                    var headers = new Dictionary<string, string>
+                    {
+                        { "Content-Type", contentType }
+                    };
+                    presignedPutObjectArgs.WithHeaders(headers);
+                    Console.WriteLine($"[TrackId: {trackId}] Presigned URL will require Content-Type: {contentType}");
+                }
 
                 string presignedUrl = await _minioClient.PresignedPutObjectAsync(presignedPutObjectArgs);
                 return presignedUrl;
