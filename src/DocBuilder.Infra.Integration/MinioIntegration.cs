@@ -12,28 +12,7 @@ namespace DocBuilder.Infra.Integration
 
         public MinioIntegration()
         {
-            // Try to load .env file from multiple possible locations
-            var possiblePaths = new[]
-            {
-                Path.Combine(Directory.GetCurrentDirectory(), ".env"),
-                Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "..", ".env"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".env"),
-                Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "..", ".env")
-            };
-
-            bool envLoaded = false;
-            foreach (var path in possiblePaths)
-            {
-                var fullPath = Path.GetFullPath(path);
-                if (File.Exists(fullPath))
-                {
-                    DotNetEnv.Env.Load(fullPath);
-                    envLoaded = true;
-                    break;
-                }
-            }
-
-            // Even if .env is not found, try to read from environment variables
+            // Read from environment variables (loaded from .env in Program.cs)
             var endpoint = Environment.GetEnvironmentVariable("MINIO_ENDPOINT") ?? string.Empty;
             var accessKey = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY") ?? string.Empty;
             var secretKey = Environment.GetEnvironmentVariable("MINIO_SECRET_KEY") ?? string.Empty;
@@ -45,8 +24,7 @@ namespace DocBuilder.Infra.Integration
                 var errorMsg = $"MinIO configuration is incomplete. " +
                               $"MINIO_ENDPOINT={(!string.IsNullOrEmpty(endpoint) ? "SET" : "MISSING")}, " +
                               $"MINIO_ACCESS_KEY={(!string.IsNullOrEmpty(accessKey) ? "SET" : "MISSING")}, " +
-                              $"MINIO_SECRET_KEY={(!string.IsNullOrEmpty(secretKey) ? "SET" : "MISSING")}. " +
-                              $".env file loaded: {envLoaded}";
+                              $"MINIO_SECRET_KEY={(!string.IsNullOrEmpty(secretKey) ? "SET" : "MISSING")}";
                 
                 throw new InvalidOperationException(errorMsg);
             }

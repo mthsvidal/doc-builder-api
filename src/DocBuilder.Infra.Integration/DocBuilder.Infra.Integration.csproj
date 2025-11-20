@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Minio" Version="6.0.3" />
     <PackageReference Include="DotNetEnv" Version="2.3.0" />
+    <PackageReference Include="RabbitMQ.Client" Version="7.2.0" />
   </ItemGroup>
 
   <ItemGroup>

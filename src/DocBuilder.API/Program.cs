@@ -2,6 +2,13 @@ using DocBuilder.API.Endpoints;
 using DocBuilder.API.Extensions;
 using DocBuilder.API.Middleware;
 
+// Load .env file from root directory
+var envPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", ".env");
+if (File.Exists(envPath))
+{
+    DotNetEnv.Env.Load(envPath);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.AddConfiguration();
 builder.AddDocumentation();
