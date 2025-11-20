@@ -36,14 +36,15 @@ public class TemplatesService : ITemplateService
         var version = await DetermineNextVersionAsync(dto.TemplateName);
         Console.WriteLine($"[TrackId: {trackId}] Using version {version} for template: {dto.TemplateName}");
 
-        // Create object path: bkt-templates/template-name/V1/file-name or V2, V3, etc.
-        var objectPath = $"{dto.TemplateName}/V{version}/{dto.FileNameWithExtension}";
+        // Create object path: template-name/V1/Raw/file-name.zip or V2, V3, etc.
+        var objectPath = $"{dto.TemplateName}/V{version}/Raw/{dto.FileNameWithExtension}";
 
-        // Generate presigned upload URL
+        // Generate presigned upload URL with content-type restriction
         var presignedUrl = await _minioIntegration.GeneratePresignedUploadUrlAsync(
             StorageConstants.TemplatesBucketName, 
             objectPath, 
-            900 // 15 minutes expiry
+            900, // 15 minutes expiry
+            "application/zip" // Only allow ZIP files
         );
 
         if (string.IsNullOrEmpty(presignedUrl))
