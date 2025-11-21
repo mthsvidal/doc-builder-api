@@ -13,9 +13,9 @@ services:
       - "9001:9001"
       
     # Volume definitions - This is crucial!
-    # Maps local folder './infra/minio-data' to '/data' in the container
+    # Uses Docker named volume for MinIO data persistence
     volumes:
-      - ./infra/minio-data:/data
+      - minio-data:/data
       
     # Load environment variables from .env file
     env_file:
@@ -25,6 +25,14 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
       - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+      - MINIO_NOTIFY_AMQP_ENABLE_1=on
+      - MINIO_NOTIFY_AMQP_URL_1=amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      - MINIO_NOTIFY_AMQP_EXCHANGE_1=templates
+      - MINIO_NOTIFY_AMQP_EXCHANGE_TYPE_1=topic
+      - MINIO_NOTIFY_AMQP_ROUTING_KEY_1=minio.events
+      - MINIO_NOTIFY_AMQP_MANDATORY_1=on
+      - MINIO_NOTIFY_AMQP_DURABLE_1=on
+      - MINIO_NOTIFY_AMQP_DELIVERY_MODE_1=2
       
     # Command to start MinIO server and point console to port 9001
     command: server /data --console-address ":9001"
@@ -34,6 +42,37 @@ services:
       interval: 30s
       timeout: 20s
       retries: 3
+    networks:
+      - app-network
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb_server
+    restart: unless-stopped
+    
+    # Port mapping
+    ports:
+      - "27017:27017"
+    
+    # Load environment variables from .env file
+    env_file:
+      - .env
+    
+    # MongoDB credentials
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - MONGO_INITDB_DATABASE=${MONGO_DATABASE}
+    
+    # Volume for persistence
+    volumes:
+      - mongodb-data:/data/db
+    
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     networks:
       - app-network
 
@@ -87,7 +126,7 @@ services:
       sleep 5;
       curl -u $$RABBITMQ_USER:$$RABBITMQ_PASSWORD -X PUT -H 'Content-Type: application/json' -d '{\"durable\":true}' http://rabbitmq:15672/api/queues/%2F/templates-queue;
       curl -u $$RABBITMQ_USER:$$RABBITMQ_PASSWORD -X PUT -H 'Content-Type: application/json' -d '{\"type\":\"topic\",\"durable\":true}' http://rabbitmq:15672/api/exchanges/%2F/templates;
-      curl -u $$RABBITMQ_USER:$$RABBITMQ_PASSWORD -X POST -H 'Content-Type: application/json' -d '{\"routing_key\":\"minio.object.created\"}' http://rabbitmq:15672/api/bindings/%2F/e/templates/q/templates-queue;
+      curl -u $$RABBITMQ_USER:$$RABBITMQ_PASSWORD -X POST -H 'Content-Type: application/json' -d '{\"routing_key\":\"#\"}' http://rabbitmq:15672/api/bindings/%2F/e/templates/q/templates-queue;
       echo 'RabbitMQ configured successfully';
       "
 
@@ -100,23 +139,22 @@ services:
       rabbitmq-setup:
         condition: service_completed_successfully
     environment:
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - RABBITMQ_USER=${RABBITMQ_USER}
-      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
     networks:
       - app-network
     entrypoint: >
       /bin/sh -c "
-      mc alias set myminio http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY;
+      echo 'Starting MinIO configuration...';
+      mc alias set myminio http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      echo 'Creating bucket...';
       mc mb myminio/bkt-templates --ignore-existing;
-      mc event remove myminio/bkt-templates --force || true;
-      mc admin config reset myminio notify_amqp:1 || true;
-      mc admin config set myminio notify_amqp:1 url=\"amqp://$$RABBITMQ_USER:$$RABBITMQ_PASSWORD@rabbitmq:5672\" exchange=\"templates\" exchange_type=\"topic\" routing_key=\"template.upload\" mandatory=\"off\" durable=\"on\" auto_deleted=\"off\";
-      mc admin service restart myminio;
-      sleep 10;
-      mc alias set myminio http://minio:9000 $$MINIO_ACCESS_KEY $$MINIO_SECRET_KEY;
+      echo 'Verifying AMQP configuration...';
+      mc admin config get myminio notify_amqp:1;
+      echo 'Adding event notification...';
       mc event add myminio/bkt-templates arn:minio:sqs::1:amqp --event put --suffix .zip;
+      echo 'Listing configured events...';
+      mc event list myminio/bkt-templates;
       echo 'MinIO configured successfully';
       "
 
@@ -126,3 +164,5 @@ networks:
 
 volumes:
   rabbitmq-data:
+  mongodb-data:
+  minio-data:
