@@ -12,7 +12,7 @@ if (File.Exists(envPath))
 var builder = WebApplication.CreateBuilder(args);
 builder.AddConfiguration();
 builder.AddDocumentation();
-builder.Services.AddDomainServices();
+builder.Services.AddDomainServices(builder.Configuration);
 
 var app = builder.Build();
 

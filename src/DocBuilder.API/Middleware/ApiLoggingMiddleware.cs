@@ -11,16 +11,18 @@ public class ApiLoggingMiddleware
 {
     private readonly RequestDelegate _next;
     private readonly IMinioIntegration _minioIntegration;
+    private readonly ILogIntegration _logIntegration;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
-    public ApiLoggingMiddleware(RequestDelegate next, IMinioIntegration minioIntegration)
+    public ApiLoggingMiddleware(RequestDelegate next, IMinioIntegration minioIntegration, ILogIntegration logIntegration)
     {
         _next = next;
         _minioIntegration = minioIntegration;
+        _logIntegration = logIntegration;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -42,6 +44,7 @@ public class ApiLoggingMiddleware
         var requestBody = await CaptureRequestBodyAsync(context.Request);
         
         object? requestData = null;
+        
         if (!string.IsNullOrWhiteSpace(requestBody))
         {
             try
@@ -76,7 +79,7 @@ public class ApiLoggingMiddleware
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TrackId: {trackId}] Error logging request: {ex.Message}");
+                _logIntegration.LogError("Error logging request: {0}", ex);
             }
         });
 
@@ -88,34 +91,14 @@ public class ApiLoggingMiddleware
         try
         {
             await _next(context);
-        }
-        catch (Exception ex)
-        {
-            // Log exception details
-            context.Response.StatusCode = 500;
-            context.Response.ContentType = "application/json";
             
-            var errorResponse = new
-            {
-                error = ex.Message,
-                stackTrace = ex.StackTrace,
-                type = ex.GetType().Name
-            };
-            
-            var errorJson = JsonSerializer.Serialize(errorResponse, JsonOptions);
-            var errorBytes = Encoding.UTF8.GetBytes(errorJson);
-            await responseBodyStream.WriteAsync(errorBytes);
-            
-            Console.WriteLine($"[TrackId: {trackId}] Exception occurred: {ex.Message}");
-        }
-        finally
-        {
             // Capture response body
             responseBodyStream.Seek(0, SeekOrigin.Begin);
             var responseBody = await new StreamReader(responseBodyStream).ReadToEndAsync();
             responseBodyStream.Seek(0, SeekOrigin.Begin);
 
             object? responseData = null;
+            
             if (!string.IsNullOrWhiteSpace(responseBody))
             {
                 try
@@ -148,13 +131,33 @@ public class ApiLoggingMiddleware
                 }
                 catch (Exception logEx)
                 {
-                    Console.WriteLine($"[TrackId: {trackId}] Error logging response: {logEx.Message}");
+                    _logIntegration.LogError("Error logging response: {0}", logEx);
                 }
             });
 
             // Copy response back to original stream
-            await responseBodyStream.CopyToAsync(originalBodyStream);
             context.Response.Body = originalBodyStream;
+            await responseBodyStream.CopyToAsync(originalBodyStream);
+        }
+        catch (Exception ex)
+        {
+            // Log exception details
+            context.Response.Body = originalBodyStream;
+            context.Response.Clear();
+            context.Response.StatusCode = 500;
+            context.Response.ContentType = "application/json";
+            
+            var errorResponse = new
+            {
+                error = ex.Message,
+                stackTrace = ex.StackTrace,
+                type = ex.GetType().Name
+            };
+            
+            var errorJson = JsonSerializer.Serialize(errorResponse, JsonOptions);
+            await context.Response.WriteAsync(errorJson);
+            
+            _logIntegration.LogError("Exception occurred: {0}", ex);
         }
     }
 
@@ -164,9 +167,7 @@ public class ApiLoggingMiddleware
             return string.Empty;
 
         if (!request.Body.CanSeek)
-        {
             request.EnableBuffering();
-        }
 
         request.Body.Position = 0;
 

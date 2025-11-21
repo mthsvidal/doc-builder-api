@@ -15,6 +15,7 @@
   <ItemGroup>
     <ProjectReference Include="..\DocBuilder.Domain\DocBuilder.Domain.csproj" />
     <ProjectReference Include="..\DocBuilder.Infra.Integration\DocBuilder.Infra.Integration.csproj" />
+    <ProjectReference Include="..\DocBuilder.Infra.Data\DocBuilder.Infra.Data.csproj" />
   </ItemGroup>
 
 </Project>
