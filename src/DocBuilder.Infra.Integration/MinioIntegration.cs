@@ -9,9 +9,11 @@ namespace DocBuilder.Infra.Integration
     public class MinioIntegration : IMinioIntegration
     {
         private readonly IMinioClient _minioClient;
+        private readonly ILogIntegration _logIntegration;
 
-        public MinioIntegration()
+        public MinioIntegration(ILogIntegration logIntegration)
         {
+            _logIntegration = logIntegration;
             // Read from environment variables (loaded from .env in Program.cs)
             var endpoint = Environment.GetEnvironmentVariable("MINIO_ENDPOINT") ?? string.Empty;
             var accessKey = Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY") ?? string.Empty;
@@ -39,7 +41,7 @@ namespace DocBuilder.Infra.Integration
         public async Task EnsureBucketExistsAsync(string bucketName)
         {
             var trackId = RequestContext.TrackId;
-            Console.WriteLine($"[TrackId: {trackId}] Ensuring bucket '{bucketName}' exists");
+            _logIntegration.LogInformation("Ensuring bucket '{0}' exists", bucketName);
             
             try
             {
@@ -67,7 +69,7 @@ namespace DocBuilder.Infra.Integration
         public async Task<string?> GeneratePresignedUploadUrlAsync(string bucketName, string objectName, int expiryInSeconds = 900, string? contentType = null)
         {
             var trackId = RequestContext.TrackId;
-            Console.WriteLine($"[TrackId: {trackId}] Generating presigned URL for '{bucketName}/{objectName}'");
+            _logIntegration.LogInformation("Generating presigned URL for '{0}/{1}'", bucketName, objectName);
             
             try
             {
@@ -84,7 +86,7 @@ namespace DocBuilder.Infra.Integration
                         { "Content-Type", contentType }
                     };
                     presignedPutObjectArgs.WithHeaders(headers);
-                    Console.WriteLine($"[TrackId: {trackId}] Presigned URL will require Content-Type: {contentType}");
+                    _logIntegration.LogInformation("Presigned URL will require Content-Type: {0}", contentType);
                 }
 
                 string presignedUrl = await _minioClient.PresignedPutObjectAsync(presignedPutObjectArgs);
@@ -99,7 +101,7 @@ namespace DocBuilder.Infra.Integration
         public async Task UploadJsonAsync(string bucketName, string objectPath, string jsonContent)
         {
             var trackId = RequestContext.TrackId;
-            Console.WriteLine($"[TrackId: {trackId}] Uploading JSON to '{bucketName}/{objectPath}'");
+            _logIntegration.LogInformation("Uploading JSON to '{0}/{1}'", bucketName, objectPath);
             
             try
             {
@@ -121,7 +123,7 @@ namespace DocBuilder.Infra.Integration
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TrackId: {trackId}] Error uploading JSON: {ex.Message}");
+                _logIntegration.LogError("Error uploading JSON: {0}", ex);
                 // Don't throw - logging should not break the application
             }
         }
@@ -129,7 +131,7 @@ namespace DocBuilder.Infra.Integration
         public async Task<IEnumerable<string>> ListObjectVersionsAsync(string bucketName, string prefix)
         {
             var trackId = RequestContext.TrackId;
-            Console.WriteLine($"[TrackId: {trackId}] Listing objects in '{bucketName}' with prefix '{prefix}'");
+            _logIntegration.LogInformation("Listing objects in '{0}' with prefix '{1}'", bucketName, prefix);
             
             var objectPaths = new List<string>();
             
@@ -145,18 +147,66 @@ namespace DocBuilder.Infra.Integration
                 await foreach (var item in observable)
                 {
                     if (!string.IsNullOrEmpty(item.Key))
-                    {
                         objectPaths.Add(item.Key);
-                    }
                 }
                 
-                Console.WriteLine($"[TrackId: {trackId}] Found {objectPaths.Count} objects");
+                _logIntegration.LogInformation("Found {0} objects", objectPaths.Count);
                 return objectPaths;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TrackId: {trackId}] Error listing objects: {ex.Message}");
+                _logIntegration.LogError("Error listing objects: {0}", ex);
                 return Enumerable.Empty<string>();
+            }
+        }
+
+        public async Task DeleteObjectAsync(string bucketName, string objectPath)
+        {
+            var trackId = RequestContext.TrackId;
+            _logIntegration.LogInformation("Deleting object '{0}/{1}'", bucketName, objectPath);
+            
+            try
+            {
+                var removeObjectArgs = new RemoveObjectArgs()
+                    .WithBucket(bucketName)
+                    .WithObject(objectPath);
+
+                await _minioClient.RemoveObjectAsync(removeObjectArgs);
+                _logIntegration.LogInformation("Successfully deleted object '{0}'", objectPath);
+            }
+            catch (Exception ex)
+            {
+                _logIntegration.LogError("Error deleting object '{0}': {1}", ex, objectPath, ex.Message);
+                throw new InvalidOperationException($"Failed to delete object '{objectPath}' from bucket '{bucketName}': {ex.Message}", ex);
+            }
+        }
+
+        public async Task DeleteObjectsByPrefixAsync(string bucketName, string prefix)
+        {
+            var trackId = RequestContext.TrackId;
+            _logIntegration.LogInformation("Deleting all objects in '{0}' with prefix '{1}'", bucketName, prefix);
+            
+            try
+            {
+                // List all objects with the prefix
+                var objectPaths = await ListObjectVersionsAsync(bucketName, prefix);
+                
+                if (!objectPaths.Any())
+                {
+                    _logIntegration.LogInformation("No objects found with prefix '{0}'", prefix);
+                    return;
+                }
+
+                // Delete each object
+                foreach (var objectPath in objectPaths)
+                    await DeleteObjectAsync(bucketName, objectPath);
+                
+                _logIntegration.LogInformation("Successfully deleted {0} objects with prefix '{1}'", objectPaths.Count(), prefix);
+            }
+            catch (Exception ex)
+            {
+                _logIntegration.LogError("Error deleting objects by prefix '{0}': {1}", ex, prefix, ex.Message);
+                throw new InvalidOperationException($"Failed to delete objects with prefix '{prefix}' from bucket '{bucketName}': {ex.Message}", ex);
             }
         }
     }

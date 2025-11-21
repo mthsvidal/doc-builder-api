@@ -26,5 +26,15 @@ namespace DocBuilder.Domain.Interfaces.Integrations
         /// Lists all object paths within a specific prefix (folder) in a bucket.
         /// </summary>
         Task<IEnumerable<string>> ListObjectVersionsAsync(string bucketName, string prefix);
+
+        /// <summary>
+        /// Deletes an object from MinIO.
+        /// </summary>
+        Task DeleteObjectAsync(string bucketName, string objectPath);
+
+        /// <summary>
+        /// Deletes multiple objects from MinIO that match a prefix.
+        /// </summary>
+        Task DeleteObjectsByPrefixAsync(string bucketName, string prefix);
     }
 }
